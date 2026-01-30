@@ -9,21 +9,22 @@ CHECKPOINT_DIR = "checkpoints"
 # --- Hardware ---
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 # Set to 0 if you are on Windows and get errors, otherwise 4 is good for i5-8400
-NUM_WORKERS = 4 
+NUM_WORKERS = 5 
 
 # --- Model Selection ---
 # Options: "deeplabv3plus", "unet", "manet"
 MODEL_TYPE = "deeplabv3plus"
 ENCODER = "efficientnet-b3"
-RESUME = False
+RESUME = True
 
 # --- Training Hyperparameters ---
 CLASSES = 19
-BATCH_SIZE = 8
-NUM_EPOCHS = 200
-LEARNING_RATE = 1e-4
-ALPHA = 0.5        # Balance between CE and Dice loss
+BATCH_SIZE = 4
+NUM_EPOCHS = 150
+LEARNING_RATE = 5e-5
+ALPHA = 1.1        # Balance between CE and Dice loss
 PATIENCE = 50     # Early stopping: epochs to wait for improvement
+ACCUM_STEPS = 4
 
 # --- Preprocessing ---
 RESIZE = False      # Whether to divide height/width by 2

@@ -3,13 +3,32 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class JointLoss(nn.Module):
-    def __init__(self, num_classes=19, alpha=0.5, weight=None):
+    def __init__(self, num_classes=19, alpha=0.5, gamma=2.0, weight=None):
         super(JointLoss, self).__init__()
         self.num_classes = num_classes
         self.alpha = alpha
+        self.gamma = gamma
         # Standard CE Loss
         self.ce = nn.CrossEntropyLoss(ignore_index=255, weight=weight)
-
+        
+    def focal_loss(self, logits, target):
+        """
+        Focal Loss = - (1 - pt)^gamma * log(pt)
+        """
+        # 1. Get standard Cross Entropy per pixel
+        ce_loss = self.ce(logits, target) 
+        
+        # 2. Calculate probability of the correct class (pt)
+        pt = torch.exp(-ce_loss) 
+        
+        # 3. Calculate Focal weight: (1-pt)^gamma
+        # Pixels with high probability (pt -> 1) get a weight near 0
+        # Pixels with low probability (pt -> 0) get a high weight
+        f_loss = ((1 - pt) ** self.gamma) * ce_loss
+        
+        # 4. Average the loss across the non-ignored pixels
+        return f_loss.mean()
+    
     def dice_loss(self, logits, target):
         """Vectorized Dice Loss (No Loops)"""
         smooth = 1e-7
@@ -33,8 +52,8 @@ class JointLoss(nn.Module):
         return 1.0 - dice_per_class.mean()
 
     def forward(self, logits, target):
-        ce_loss = self.ce(logits, target)
+        focal = self.focal_loss(logits, target)
         dice_loss = self.dice_loss(logits, target)
         
         # Total loss = CE + (alpha * Dice)
-        return ce_loss + (self.alpha * dice_loss)
+        return focal + (self.alpha * dice_loss)

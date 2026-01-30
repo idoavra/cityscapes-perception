@@ -101,12 +101,12 @@ def get_cityscapes_loaders(data_dir, mask_dir, batch_size, num_workers=0, resize
 
     train_transform = A.Compose([
     # 1. Take a 512x512 piece of the 2048x1024 original
-    A.RandomCrop(width=1024, height=512), 
+    A.RandomCrop(width=512, height=512), 
     
     # 2. Add "Noise" to fight the 81% vs 67% gap
-    A.HorizontalFlip(p=0.5),
+    # A.HorizontalFlip(p=0.5),
     A.RandomBrightnessContrast(p=0.2),
-    A.GaussNoise(p=0.1),
+    # A.GaussNoise(p=0.1),
     A.ColorJitter(brightness=0.2, contrast=0.2, p=0.3),
     
     # 3. Standardize the data
@@ -115,7 +115,7 @@ def get_cityscapes_loaders(data_dir, mask_dir, batch_size, num_workers=0, resize
     ])
 
     val_transform = A.Compose([
-        A.CenterCrop(width=1024, height=512),
+        A.CenterCrop(width=512, height=512),
         A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
         ToTensorV2(),
     ])

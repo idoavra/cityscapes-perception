@@ -37,7 +37,7 @@ class StreamSegMetrics:
         
         return {
             "Overall mIoU": miou.item(),
-            "IoU": iu # Tensor of 19 values
+            "Class IoU": iu.tolist() # Convert tensor to list for the printer
         }
 
     def reset(self):

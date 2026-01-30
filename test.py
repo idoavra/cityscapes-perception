@@ -20,7 +20,7 @@ def test():
     # 2. Setup Model
     model = get_model(config.MODEL_TYPE, config.ENCODER, config.CLASSES).to(config.DEVICE)
     model.segmentation_head = nn.Sequential(
-        nn.Dropout2d(p=0.1),
+        nn.Dropout2d(p=0.2),
         *list(model.segmentation_head.children())
     )
     # 3. Load your best weights

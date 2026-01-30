@@ -16,7 +16,7 @@ import torch.nn as nn
 def main():
     # 1. Prepare Data
     # Added drop_last=True here to prevent the "1 image batch" error
-    train_loader, val_loader, test_loader = get_cityscapes_loaders(
+    train_loader, val_loader, _ = get_cityscapes_loaders(
         data_dir=config.DATA_DIR,
         mask_dir=config.MASK_DIR,
         batch_size=config.BATCH_SIZE,
@@ -90,7 +90,7 @@ def main():
         print("No checkpoint has found, start")
 
     # Ensure encoder starts frozen (if not already handled by unfreeze logic)
-    if start_epoch < config.NUM_EPOCHS // 15:
+    if start_epoch < config.NUM_EPOCHS // 20:
         for p in model.encoder.parameters():
             p.requires_grad = False
 
@@ -98,7 +98,7 @@ def main():
     for epoch in range(start_epoch, config.NUM_EPOCHS):
         
         # --- Unfreeze Logic ---
-        if epoch >= config.NUM_EPOCHS // 15 and not unfreeze:
+        if epoch >= config.NUM_EPOCHS // 20 and not unfreeze:
             print("=> Unfreezing Encoder...")
             for p in model.encoder.parameters():
                 p.requires_grad = True
@@ -111,7 +111,7 @@ def main():
             
             encoder_params = list(model.encoder.parameters())
             if encoder_params[0] not in existing_params:
-                optimizer.add_param_group({'params': encoder_params, 'lr': 1e-5})
+                optimizer.add_param_group({'params': encoder_params, 'lr': 5e-6})
                 print("=> Encoder parameters added to optimizer group.")
             else:
                 print("=> Encoder parameters already present in optimizer. Skipping add.")
@@ -123,19 +123,21 @@ def main():
         train_loss = 0.0
         pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{config.NUM_EPOCHS} [Train]")
         
-        for x, y in pbar:
+        for i, (x, y) in enumerate(pbar):
             x, y = x.to(config.DEVICE), y.to(config.DEVICE)
-            optimizer.zero_grad()
             
             # Use autocast for the forward pass (16-bit math)
             with autocast(device_type='cuda'):
                 logits = model(x)
                 loss = criterion(logits, y)
-            
+                loss = loss / config.ACCUM_STEPS
+
             # Scaler handles the backward pass and step to prevent underflow
             scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
+            if (i + 1) % config.ACCUM_STEPS == 0 or (i + 1) == len(train_loader):
+                scaler.step(optimizer)
+                scaler.update()
+                optimizer.zero_grad()
             
             train_loss += loss.item()
             preds = torch.argmax(logits, dim=1)
@@ -185,18 +187,19 @@ def main():
             'truck', 'bus', 'train', 'motorcycle', 'bicycle'
         ]
         
-        # Access the per-class IoU from your metrics object
-        # Most StreamSegMetrics return this as a dictionary or list under 'Class IoU'
-        if "Class IoU" in val_stats:
-            print(f"{'Class Name':<15} | {'IoU Score':<10}")
-            print("-" * 30)
-            class_ious = val_stats["Class IoU"]
-            for i, iou in enumerate(class_ious):
-                name = class_names[i] if i < len(class_names) else f"Class {i}"
-                # Highlight low-performing classes in red-ish text (optional console logic)
-                print(f"{name:<15} | {iou:.4f}")
-        
-        print("="*40 + "\n")
+        if epoch % 10 == 0:
+            # Access the per-class IoU from your metrics object
+            # Most StreamSegMetrics return this as a dictionary or list under 'Class IoU'
+            if "Class IoU" in val_stats:
+                print(f"{'Class Name':<15} | {'IoU Score':<10}")
+                print("-" * 30)
+                class_ious = val_stats["Class IoU"]
+                for i, iou in enumerate(class_ious):
+                    name = class_names[i] if i < len(class_names) else f"Class {i}"
+                    # Highlight low-performing classes in red-ish text (optional console logic)
+                    print(f"{name:<15} | {iou:.4f}")
+            
+            print("="*40 + "\n")
 
         # Scheduler & Early Stopping
         scheduler.step(current_miou)
@@ -216,6 +219,7 @@ def main():
             print(f"New Best mIoU: {best_miou:.4f} - Model Saved!")
             
             # Plot using the full history
+            
             plot_training(
                 history["train_miou"], 
                 history["train_loss"], 
@@ -223,6 +227,7 @@ def main():
                 history["val_loss"], 
                 save_dir="plots"
             )
+            print("History Saved!")
         else:
             early_stop_counter += 1
             print(f"No improvement for {early_stop_counter}/{config.PATIENCE} epochs.")
