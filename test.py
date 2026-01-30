@@ -6,7 +6,6 @@ from src.models import get_model
 from src.metrics import StreamSegMetrics
 from src.utils import load_checkpoint, decode_segmap
 import matplotlib.pyplot as plt
-import torch.nn as nn
 
 def test():
     # 1. Load Data (We only need the test_loader)
@@ -18,11 +17,13 @@ def test():
     )
 
     # 2. Setup Model
-    model = get_model(config.MODEL_TYPE, config.ENCODER, config.CLASSES).to(config.DEVICE)
-    model.segmentation_head = nn.Sequential(
-        nn.Dropout2d(p=0.2),
-        *list(model.segmentation_head.children())
-    )
+    model = get_model(
+        config.MODEL_TYPE,
+        config.ENCODER,
+        config.CLASSES,
+        dropout=config.DROPOUT
+    ).to(config.DEVICE)
+    
     # 3. Load your best weights
     checkpoint_path = "checkpoints/best_model.pth"
     try:
@@ -55,7 +56,7 @@ def test():
 
     # 6. Get Results
     results = metrics.get_results()
-    miou_per_class = results["IoU"]
+    miou_per_class = results["Class IoU"]
     overall_miou = results["Overall mIoU"]
 
     # 7. Print Pretty Table

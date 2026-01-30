@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+
+# Jupyter Notebooks
+.ipynb_checkpoints
+*.ipynb_checkpoints
+Original notebook.ipynb
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+
+# Data (DON'T COMMIT LARGE DATASETS!)
+datasets/
+data/
+leftImg8bit/
+gtFine/
+*.zip
+*.tar.gz
+*.tar
+*.rar
+
+# Model Checkpoints & Outputs
+checkpoints/
+*.pth
+*.pt
+*.ckpt
+net
+resnet18+Unet+resize_factor_4x4/
+plots/
+visuals/
+wandb/
+runs/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -11,7 +11,38 @@ from src.metrics import StreamSegMetrics
 from torch.amp import autocast, GradScaler # Added for speed
 # Added plot_training to the imports
 from src.utils import calculate_class_weights, save_checkpoint, visualize_prediction, plot_training
-import torch.nn as nn
+
+def freeze_encoder(model):
+    """Freezes encoder for transfer learning."""
+    for p in model.encoder.parameters():
+        p.requires_grad = False
+
+def unfreeze_encoder(model, optimizer, encoder_lr=5e-6):
+    """
+    Unfreezes encoder and adds to optimizer if not already present.
+
+    Args:
+        model: The segmentation model
+        optimizer: The optimizer to update
+        encoder_lr: Learning rate for encoder (typically lower than decoder)
+    """
+    # Unfreeze all encoder parameters
+    for p in model.encoder.parameters():
+        p.requires_grad = True
+
+    # Check if encoder params are already in optimizer (resume case)
+    encoder_params = list(model.encoder.parameters())
+    if not encoder_params:
+        return
+
+    # Check if first encoder param is in any optimizer group
+    param_ids_in_optimizer = {id(p) for group in optimizer.param_groups for p in group['params']}
+
+    if id(encoder_params[0]) not in param_ids_in_optimizer:
+        optimizer.add_param_group({'params': encoder_params, 'lr': encoder_lr})
+        print(f"=> Encoder unfrozen and added to optimizer with LR={encoder_lr}")
+    else:
+        print("=> Encoder already in optimizer (resumed from checkpoint)")
 
 def main():
     # 1. Prepare Data
@@ -28,27 +59,17 @@ def main():
 
     # 2. Setup Model
     model = get_model(
-        model_name="deeplabv3plus", 
-        encoder_name="efficientnet-b3", 
-        classes=config.CLASSES
+        model_name=config.MODEL_TYPE,
+        encoder_name=config.ENCODER,
+        classes=config.CLASSES,
+        dropout=config.DROPOUT
     ).to(config.DEVICE)
-
-    dropout_layer = nn.Dropout2d(p=0.2)
-
-# 2. Re-wrap the segmentation_head
-# This places Dropout BEFORE the Conv2d layer
-    model.segmentation_head = nn.Sequential(
-    dropout_layer,
-    *list(model.segmentation_head.children())
-)
-
-    print(model.segmentation_head)
 
     # 3. Handle Class Imbalance
     weights = calculate_class_weights(train_loader, num_classes=config.CLASSES).to(config.DEVICE)
     
     # 4. Loss, Optimizer, and Metrics
-    criterion = JointLoss(num_classes=config.CLASSES, alpha=config.ALPHA, weight=weights)
+    criterion = JointLoss(num_classes=config.CLASSES, alpha=config.DICE_LOSS_WEIGHT, weight=weights)
     optimizer = torch.optim.Adam(model.parameters(), lr=config.LEARNING_RATE, weight_decay=1e-4)
     scaler = GradScaler() # <--- AMP Scaler: Saves VRAM & Speeds up math
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.1, patience=5)
@@ -89,32 +110,18 @@ def main():
     else:
         print("No checkpoint has found, start")
 
-    # Ensure encoder starts frozen (if not already handled by unfreeze logic)
-    if start_epoch < config.NUM_EPOCHS // 20:
-        for p in model.encoder.parameters():
-            p.requires_grad = False
+    # Freeze encoder if starting before unfreeze epoch
+    UNFREEZE_EPOCH = config.NUM_EPOCHS // 20
+    if start_epoch < UNFREEZE_EPOCH:
+        freeze_encoder(model)
+        print(f"=> Encoder frozen. Will unfreeze at epoch {UNFREEZE_EPOCH + 1}")
 
     # 6. Training Loop
     for epoch in range(start_epoch, config.NUM_EPOCHS):
-        
-        # --- Unfreeze Logic ---
-        if epoch >= config.NUM_EPOCHS // 20 and not unfreeze:
-            print("=> Unfreezing Encoder...")
-            for p in model.encoder.parameters():
-                p.requires_grad = True
-            
-            # Check if encoder params are already in the optimizer
-            existing_params = set()
-            for group in optimizer.param_groups:
-                for p in group['params']:
-                    existing_params.add(p)
-            
-            encoder_params = list(model.encoder.parameters())
-            if encoder_params[0] not in existing_params:
-                optimizer.add_param_group({'params': encoder_params, 'lr': 5e-6})
-                print("=> Encoder parameters added to optimizer group.")
-            else:
-                print("=> Encoder parameters already present in optimizer. Skipping add.")
+
+        # Unfreeze encoder at the right epoch
+        if epoch == UNFREEZE_EPOCH and not unfreeze:
+            unfreeze_encoder(model, optimizer, encoder_lr=5e-6)
             unfreeze = True
 
         # --- Training Phase ---
@@ -130,11 +137,11 @@ def main():
             with autocast(device_type='cuda'):
                 logits = model(x)
                 loss = criterion(logits, y)
-                loss = loss / config.ACCUM_STEPS
+                loss = loss / config.GRADIENT_ACCUMULATION_STEPS
 
             # Scaler handles the backward pass and step to prevent underflow
             scaler.scale(loss).backward()
-            if (i + 1) % config.ACCUM_STEPS == 0 or (i + 1) == len(train_loader):
+            if (i + 1) % config.GRADIENT_ACCUMULATION_STEPS == 0 or (i + 1) == len(train_loader):
                 scaler.step(optimizer)
                 scaler.update()
                 optimizer.zero_grad()

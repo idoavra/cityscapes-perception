@@ -91,24 +91,16 @@ def get_cityscapes_loaders(data_dir, mask_dir, batch_size, num_workers=0, resize
     """
     Helper function to create Train, Val, and Test loaders in one go.
     """
-    # train_transform = v2.Compose([
-    #     v2.RandomHorizontalFlip(p=0.5),
-    #     v2.RandomAffine(degrees=15, translate=(0.05, 0.05), scale=(0.95, 1.05)),
-    #     v2.ToImage(),
-    #     v2.ToDtype(torch.float32, scale=True),
-    #     v2.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-    # ])
-
     train_transform = A.Compose([
     # 1. Take a 512x512 piece of the 2048x1024 original
-    A.RandomCrop(width=512, height=512), 
-    
-    # 2. Add "Noise" to fight the 81% vs 67% gap
-    # A.HorizontalFlip(p=0.5),
+    A.RandomCrop(width=512, height=512),
+
+    # 2. Augmentations to reduce overfitting
+    A.HorizontalFlip(p=0.5),
     A.RandomBrightnessContrast(p=0.2),
-    # A.GaussNoise(p=0.1),
     A.ColorJitter(brightness=0.2, contrast=0.2, p=0.3),
-    
+    # A.GaussNoise(p=0.1),  # Uncomment if train/val gap persists after other augmentations
+
     # 3. Standardize the data
     A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
     ToTensorV2(),
