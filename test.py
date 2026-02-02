@@ -64,7 +64,7 @@ def test():
     print(f"{'Class':<15} | {'IoU (%)':<10}")
     print("-" * 30)
     for i in range(len(labels)):
-        iou_val = miou_per_class[i].item() * 100
+        iou_val = miou_per_class[i] * 100
         print(f"{labels[i]:<15} | {iou_val:>8.2f}%")
     
     print("-" * 30)
