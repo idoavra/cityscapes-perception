@@ -1,3 +1,6 @@
+import matplotlib
+matplotlib.use('Agg')  # Use non-GUI backend to avoid tkinter errors on Windows
+
 import torch
 from tqdm import tqdm
 import os
@@ -69,7 +72,7 @@ def main():
     weights = calculate_class_weights(train_loader, num_classes=config.CLASSES).to(config.DEVICE)
     
     # 4. Loss, Optimizer, and Metrics
-    criterion = JointLoss(num_classes=config.CLASSES, alpha=config.DICE_LOSS_WEIGHT, weight=weights)
+    criterion = JointLoss(num_classes=config.CLASSES, alpha=config.DICE_LOSS_WEIGHT, gamma = config.FOCAL_LOSS_WEIGHT,  weight=weights)
     optimizer = torch.optim.Adam(model.parameters(), lr=config.LEARNING_RATE, weight_decay=1e-4)
     scaler = GradScaler() # <--- AMP Scaler: Saves VRAM & Speeds up math
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.1, patience=5)

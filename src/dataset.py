@@ -93,21 +93,37 @@ def get_cityscapes_loaders(data_dir, mask_dir, batch_size, num_workers=0, resize
     """
     train_transform = A.Compose([
     # 1. Take a 512x512 piece of the 2048x1024 original
-    A.RandomCrop(width=512, height=512),
+    A.RandomCrop(width=640, height=640),
 
-    # 2. Augmentations to reduce overfitting
+    # 2. Spatial augmentations (MODERATE - Exp 2.1b revised)
+    A.ShiftScaleRotate(
+        shift_limit=0.05,     # Reduced: 5% shifts (was 10%)
+        scale_limit=0.1,      # Reduced: 0.9x-1.1x (was 0.8-1.2x)
+        rotate_limit=10,      # Reduced: ±10° (was ±15°)
+        interpolation=1,      # Bilinear for image
+        border_mode=0,        # Constant border
+        p=0.3                 # Reduced: 30% (was 50%)
+    ),
     A.HorizontalFlip(p=0.5),
-    A.RandomBrightnessContrast(p=0.2),
-    A.ColorJitter(brightness=0.2, contrast=0.2, p=0.3),
-    # A.GaussNoise(p=0.1),  # Uncomment if train/val gap persists after other augmentations
 
-    # 3. Standardize the data
+    # 3. Photometric augmentations (MODERATE)
+    A.RandomBrightnessContrast(p=0.25),  # Slightly increased from baseline 0.2
+    A.ColorJitter(brightness=0.15, contrast=0.15, saturation=0.1, hue=0.05, p=0.3),  # Reduced magnitude
+    # GaussNoise removed - too aggressive
+
+    # 4. Light blur (rare)
+    A.OneOf([
+        A.MotionBlur(blur_limit=3, p=1.0),      # Reduced from 5
+        A.GaussianBlur(blur_limit=3, p=1.0),    # Reduced from 5
+    ], p=0.1),  # Reduced from 0.2
+
+    # 5. Standardize the data
     A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
     ToTensorV2(),
     ])
 
     val_transform = A.Compose([
-        A.CenterCrop(width=512, height=512),
+        A.CenterCrop(width=640, height=640),
         A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
         ToTensorV2(),
     ])
