@@ -13,7 +13,7 @@
 | Metric | Value | Notes |
 |--------|-------|-------|
 | **Val mIoU** | **66.62%** | Experiment 2.2 (640×640 resolution) |
-| **Val mIoU (TTA)** | **66.99%** | +0.99% with Test-Time Augmentation |
+| **Val mIoU (TTA)** | **67.61%** | +0.99% with Test-Time Augmentation |
 | **Train mIoU** | 75.03% | Slight overfitting (gap: 8.4%) |
 | **Training Time** | ~6-8 hours | 150 epochs on RTX 2060 |
 
