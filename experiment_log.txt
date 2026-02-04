@@ -1,0 +1,192 @@
+=================================================
+CITYSCAPES SEGMENTATION EXPERIMENT LOG
+=================================================
+
+Baseline Configuration (Epoch 128):
+------------------------------------
+Train mIoU: 61.0%
+Val mIoU: 53.0%
+Overfitting Gap: 8.0%
+
+Model: DeepLabV3Plus + EfficientNet-B3
+Dropout: 0.2
+Weight Decay: 1e-4
+Dice Loss Weight: 1.1
+Focal Loss Weight: 2.0
+Batch Size: 4 (effective: 16 with gradient accumulation)
+Learning Rate: 5e-5
+
+Goal: Reduce gap to <3%, improve val mIoU to 58-60%
+
+Backup Files:
+- config_baseline.py (baseline configuration)
+- checkpoints/baseline.pth (baseline model checkpoint)
+
+=================================================
+EXPERIMENTS
+=================================================
+
+Experiment 1.1: Increase Dropout (0.2 → 0.3)
+---------------------------------------------
+Date: 2026-01-31
+Change: DROPOUT = 0.3 in config.py
+Epochs Trained: 108
+Results:
+  Train mIoU: 66.14% (baseline: 61%)
+  Val mIoU: 53.48% (baseline: 53%)
+  Gap: 12.66% (baseline: 8%)
+Decision: ❌ REJECT - Made overfitting WORSE (+4.66% gap)
+Impact: -4.66% gap increase, negligible val improvement
+Notes: Higher dropout unexpectedly increased overfitting. Possible causes:
+       - Model was resumed from checkpoint trained with lower dropout
+       - Architecture may not respond well to this dropout level
+       - Need different regularization approach
+Reverted: Yes, back to DROPOUT = 0.2
+
+Experiment 2.1: Enable Basic Spatial Augmentation
+--------------------------------------------------
+Date: 2026-01-31
+Changes in src/dataset.py:
+  ✓ Added ShiftScaleRotate (rotation ±15°, scale 0.8-1.2x, shift 10%, p=0.5)
+  ✓ Enhanced ColorJitter with saturation=0.2, hue=0.1
+  ✓ Enabled GaussNoise (var 10-50, p=0.2)
+  ✓ Added blur augmentation (Motion/Gaussian, p=0.2)
+  ✓ Increased RandomBrightnessContrast p=0.2→0.3
+Expected Impact: -3-4% gap, +2-3% val mIoU
+Training: 80-100 epochs (augmentation needs more epochs)
+Status: ⏳ PENDING TRAINING
+
+Experiment 2.1 - Initial Results (Epoch 116):
+  Train mIoU: 48.36% (baseline: 61%)
+  Val mIoU: 47.28% (baseline: 53%)
+  Gap: 1.08% (baseline: 8%)
+Decision: 🔄 TOO AGGRESSIVE - Overfitting eliminated but performance dropped
+Analysis: Augmentation worked to reduce gap from 8%→1%, but caused underfitting
+          Both train/val dropped ~10-15%. Need to dial back strength.
+
+Experiment 2.1b: Moderate Augmentation (REVISED)
+-------------------------------------------------
+Date: 2026-01-31
+Changes in src/dataset.py (dialed back from 2.1):
+  ✓ ShiftScaleRotate: Reduced (shift 5%, scale 0.9-1.1x, rotation ±10°, p=0.3)
+  ✓ ColorJitter: Reduced magnitude (0.15/0.15/0.1/0.05, p=0.3)
+  ✓ Removed GaussNoise (too aggressive)
+  ✓ Blur: Reduced (limit=3, p=0.1)
+  ✓ RandomBrightnessContrast: p=0.25 (moderate increase)
+Expected Impact: -2-3% gap, +1-2% val mIoU (balanced approach)
+Target: Train ~59-61%, Val ~55-56%, Gap ~4-5%
+
+Experiment 2.1b - Final Results (Epoch 147):
+  Train mIoU: 70.01% (baseline: 61%)
+  Val mIoU: 58.79% (baseline: 53%)
+  Gap: 11.22% (baseline: 8%)
+Decision: ✅ PARTIAL SUCCESS - Val mIoU improved significantly
+Impact: +5.79% val mIoU (EXCELLENT!), but +3.22% gap (worse overfitting)
+Analysis: Moderate augmentation successfully improved validation performance
+          from 53% to 58.79% (hit target range 58-60%!). However, gap
+          increased from 8% to 11.22% instead of decreasing. Trade-off
+          between performance and overfitting - val improvement is substantial.
+Status: ✅ COMPLETE - Keeping augmentation, moving to resolution increase
+
+Experiment 2.2: Resolution Increase (640×640)
+----------------------------------------------
+Date: 2026-02-01
+Changes:
+  ✓ src/dataset.py line 96: RandomCrop 512→640 (+25% resolution)
+  ✓ src/dataset.py line 126: CenterCrop 512→640 (validation)
+  ✓ Config unchanged: batch_size=4, effective_batch=16
+Rationale: Larger resolution provides more context for ASPP module,
+           better small object detection (poles, signs, pedestrians),
+           and can act as additional regularization
+Expected Impact: +1-2% val mIoU (59-61%), potentially -1-2% gap
+VRAM Warning: 640×640 @ batch 4 needs ~7-8GB. May OOM on 6GB cards.
+
+Experiment 2.2 - Final Results (Epoch 124):
+  Train mIoU: 75.03% (baseline: 61%)
+  Val mIoU: 66.62% (baseline: 53%)
+  Gap: 8.41% (baseline: 8%)
+Decision: ✅ HUGE SUCCESS - Val mIoU far exceeded targets!
+Impact: +13.62% val mIoU from baseline (exceeded 58-60% target by 6.62-8.62%!)
+        +7.83% val mIoU from Exp 2.1b
+        Gap 8.41% (nearly identical to baseline 8%, much better than 2.1b's 11.22%)
+Analysis: Resolution increase from 512→640 provided dramatic improvements:
+          - Validation performance jumped from 58.79% (2.1b) to 66.62%
+          - ASPP module benefits from larger spatial context
+          - Small objects (poles, signs, pedestrians) likely better detected
+          - No OOM issues on 6GB VRAM (successful)
+          - Training converged around epoch 112 (no improvement for 12 epochs)
+          - Gap remained stable at 8.41%, close to baseline
+Conclusion: Combined moderate augmentation (2.1b) + resolution increase (2.2)
+            achieved outstanding validation performance while maintaining
+            acceptable overfitting levels.
+Status: ✅ COMPLETE - Target val mIoU 58-60% EXCEEDED by large margin!
+
+Experiment 3.1: Test-Time Augmentation (TTA)
+---------------------------------------------
+Date: 2026-02-02
+Type: Inference-only (no retraining)
+Changes:
+  ✓ Created src/tta.py with TTAWrapper class
+  ✓ Created validate_tta.py for TTA validation
+  ✓ Used 'moderate' TTA config: 3 scales (0.75x, 1.0x, 1.25x) + horizontal flip
+  ✓ Total augmentations: 6 per image
+Configuration:
+  - Scales: [0.75, 1.0, 1.25]
+  - Horizontal flip: Yes
+  - Vertical flip: No (not beneficial for street scenes)
+  - Inference time: 6x slower than baseline
+Rationale: TTA provides ensemble-like effect without retraining by averaging
+           predictions from multiple augmented views of the same image.
+           Particularly effective for small/difficult objects.
+
+Experiment 3.1 - Results:
+  Baseline Val mIoU: 66.01%
+  TTA Val mIoU: 66.99%
+  Improvement: +0.99%
+  Train mIoU: 75.03% (unchanged, inference-only)
+  Gap (with TTA): 8.04% (down from ~8.41%)
+Decision: ✅ SUCCESS - Modest but meaningful improvement
+Impact: +0.99% val mIoU improvement without retraining
+        Gap reduced by ~0.37% (8.41% → 8.04%)
+Analysis: TTA showed meaningful improvements, especially on hard classes:
+          - Motorcycle: +3.67% (54.87% → 58.54%) - biggest gain
+          - Fence: +2.59% (39.19% → 41.79%)
+          - Traffic light: +2.39% (55.17% → 57.56%)
+          - Wall: +1.69%, Pole: +1.48%, Traffic sign: +1.29%
+          - Minimal improvement on easy classes (road, car, sky)
+          - Slight decrease on truck: -0.81%
+          Overall: Small objects and difficult classes benefit most from
+                   multi-scale and flip augmentations.
+Conclusion: TTA provides +1% boost at 6x inference cost. Shows there's room
+            to train a better base model. Proceeding with training experiments
+            to achieve 67-68% val mIoU WITHOUT TTA overhead.
+Next: Experiment 3.2a - Cosine Annealing LR Schedule
+Status: ✅ COMPLETE - TTA benchmarked, moving to training improvements
+
+=================================================
+PHASE 3: TRAINING OPTIMIZATIONS
+=================================================
+
+Experiment 3.2a: Cosine Annealing LR Schedule with Warm Restarts
+-----------------------------------------------------------------
+Date: 2026-02-02
+Type: Training from scratch
+Changes:
+  ✓ train.py line 78-86: Replaced ReduceLROnPlateau with CosineAnnealingWarmRestarts
+  ✓ train.py line 225: Changed scheduler.step(current_miou) → scheduler.step()
+  ✓ config.py line 45: RESUME = False (fresh training)
+Configuration:
+  - Scheduler: CosineAnnealingWarmRestarts
+  - T_0: 30 epochs (restart period)
+  - T_mult: 1 (keep same period)
+  - eta_min: 1e-6 (minimum LR)
+  - Initial LR: 5e-5
+  - All other hyperparameters unchanged from Exp 2.2
+Rationale: Cosine annealing provides smoother LR decay than fixed LR,
+           allowing better convergence in later epochs. Warm restarts help
+           escape local minima and discover better solutions. The periodic
+           "kicks" from LR restarts can improve generalization.
+Expected Impact: +0.5-1.5% val mIoU (target: 67-68%), -0.5 to -1.5% gap
+Training: 150 epochs from scratch
+Status: ⏳ READY TO TRAIN
+

@@ -75,7 +75,17 @@ def main():
     criterion = JointLoss(num_classes=config.CLASSES, alpha=config.DICE_LOSS_WEIGHT, gamma = config.FOCAL_LOSS_WEIGHT,  weight=weights)
     optimizer = torch.optim.Adam(model.parameters(), lr=config.LEARNING_RATE, weight_decay=1e-4)
     scaler = GradScaler() # <--- AMP Scaler: Saves VRAM & Speeds up math
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.1, patience=5)
+
+    # Cosine Annealing with Warm Restarts - Experiment 3.2a
+    # Gradually decreases LR following cosine curve, then restarts periodically
+    # T_0=30: First restart after 30 epochs, T_mult=1: Keep same period
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+        optimizer,
+        T_0=30,       # Restart every 30 epochs
+        T_mult=1,     # Keep same restart period
+        eta_min=1e-6  # Minimum learning rate
+    )
+
     metrics = StreamSegMetrics(config.CLASSES)
 
     # 5. Training Variables
@@ -212,7 +222,8 @@ def main():
             print("="*40 + "\n")
 
         # Scheduler & Early Stopping
-        scheduler.step(current_miou)
+        # CosineAnnealingWarmRestarts doesn't need metric, just step count
+        scheduler.step()
         
         if current_miou > best_miou:
             best_miou = current_miou

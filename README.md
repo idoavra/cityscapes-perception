@@ -1,177 +1,267 @@
-# Semantic Segmentation on Cityscapes
+# 🚗 Cityscapes Semantic Segmentation
 
-PyTorch implementation of semantic segmentation using modern architectures on the Cityscapes dataset for autonomous driving scene understanding.
+**High-performance semantic segmentation for autonomous driving** | Part of a multi-task perception system
 
-## Features
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-red.svg)](https://pytorch.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-- **Multiple Architectures**: DeepLabV3+, U-Net, MANet with various encoder backbones
-- **Advanced Training Techniques**:
-  - Mixed precision training (AMP) for faster training
-  - Gradient accumulation for larger effective batch sizes
-  - Progressive encoder unfreezing for transfer learning
-  - Class weight balancing for handling imbalanced classes
-- **Custom Joint Loss**: Combines Focal Loss + Dice Loss for better segmentation
-- **Data Augmentation**: Albumentations pipeline with geometric and photometric transforms
-- **Resume Training**: Checkpoint system with full training history
-- **Visualization**: Automatic saving of predictions and training curves
+---
 
-## Setup
+## 📊 Current Performance
 
-### Prerequisites
+| Metric | Value | Notes |
+|--------|-------|-------|
+| **Val mIoU** | **66.62%** | Experiment 2.2 (640×640 resolution) |
+| **Val mIoU (TTA)** | **66.99%** | +0.99% with Test-Time Augmentation |
+| **Train mIoU** | 75.03% | Slight overfitting (gap: 8.4%) |
+| **Training Time** | ~6-8 hours | 150 epochs on RTX 2060 |
 
-- Python 3.8+
-- CUDA-capable GPU (recommended)
-- 6GB+ VRAM for training
+**From baseline 53% → 66.6% val mIoU** (+13.6% improvement!)
+
+---
+
+## 🎯 Features
+
+- ✅ **DeepLabV3+ with EfficientNet-B3** encoder (ImageNet pretrained)
+- ✅ **640×640 resolution** for better ASPP context and small object detection
+- ✅ **Joint Loss**: Focal Loss + Dice Loss for class imbalance handling
+- ✅ **Moderate augmentation** (spatial + photometric transforms)
+- ✅ **Test-Time Augmentation** (6x ensemble: 3 scales + h-flip)
+- ✅ **Mixed precision training** (AMP) for memory efficiency
+- ✅ **Cosine Annealing LR** with warm restarts
+- ✅ **Progressive encoder unfreezing** for transfer learning
+- ✅ **Comprehensive experiment tracking** in `experiment_log.txt`
+
+---
+
+## 🧪 Experiment Journey
+
+| Exp | Change | Train mIoU | Val mIoU | Gap | Result |
+|-----|--------|-----------|----------|-----|--------|
+| **Baseline** | - | 61.0% | 53.0% | 8.0% | - |
+| 1.1 | Dropout 0.3 | 66.1% | 53.5% | 12.7% | ❌ Worse gap |
+| 2.1 | Aggressive aug | 48.4% | 47.3% | 1.1% | ❌ Underfitting |
+| **2.1b** | Moderate aug | 70.0% | 58.8% | 11.2% | ✅ +5.8% val |
+| **2.2** | Resolution 640×640 | **75.0%** | **66.6%** | 8.4% | ✅ **+13.6% val!** |
+| **3.1** | TTA (inference) | 75.0% | **67.0%** | 8.0% | ✅ +1% boost |
+| 3.2a | Cosine Annealing | _In progress_ | _TBD_ | _TBD_ | ⏳ Training |
+
+**Key Insights:**
+- Resolution increase (512→640) was the biggest win (+7.8% val mIoU)
+- Moderate augmentation found the sweet spot (aggressive caused underfitting)
+- TTA provides +1% without retraining (especially on small objects: motorcycle +3.67%)
+
+See detailed analysis in [`experiment_log.txt`](experiment_log.txt)
+
+---
+
+## 🚀 Quick Start
 
 ### Installation
 
-1. Clone the repository:
 ```bash
+# Clone repository
 git clone <your-repo-url>
 cd Semantic_Segmentation_Cityscapes
-```
 
-2. Create a virtual environment:
-```bash
-python -m venv .venv
-# On Windows:
-.venv\Scripts\activate
-# On Linux/Mac:
-source .venv/bin/activate
-```
+# Create virtual environment
+python -m venv venv
+venv\Scripts\activate  # Windows
+# source venv/bin/activate  # Linux/Mac
 
-3. Install dependencies:
-```bash
+# Install dependencies
 pip install -r requirements.txt
 ```
 
-## Dataset Preparation
+### Dataset Setup
 
-1. Download the Cityscapes dataset from [cityscapes-dataset.com](https://www.cityscapes-dataset.com/)
-   - You need: `leftImg8bit_trainvaltest.zip` (images)
-   - And: `gtFine_trainvaltest.zip` (labels)
+Download [Cityscapes dataset](https://www.cityscapes-dataset.com/) and update `config.py`:
 
-2. Extract the dataset and update paths in `config.py`:
 ```python
-DATA_DIR = r"C:\path\to\cityscapes\leftImg8bit"
-MASK_DIR = r"C:\path\to\cityscapes\gtFine"
+DATA_DIR = Path(r"C:\datasets\Cityspaces\images")
+MASK_DIR = Path(r"C:\datasets\Cityspaces\gtFine")
 ```
 
-3. The expected directory structure:
+Expected structure:
 ```
-cityscapes/
-├── leftImg8bit/
+Cityspaces/
+├── images/
 │   ├── train/
-│   ├── val/
-│   └── test/
+│   └── val/
 └── gtFine/
     ├── train/
-    ├── val/
-    └── test/
+    └── val/
 ```
-
-## Usage
 
 ### Training
 
-Start training with default settings:
 ```bash
+# Train from scratch
+python train.py
+
+# Resume training (set RESUME=True in config.py)
 python train.py
 ```
 
-The training script will:
-- Automatically calculate class weights
-- Save best model to `checkpoints/best_model.pth`
-- Generate training curves in `plots/`
-- Create prediction visualizations in `visuals/`
+### Validation with TTA
 
-### Evaluation
-
-Test your trained model:
 ```bash
-python test.py
+# Test-Time Augmentation validation
+python validate_tta.py
 ```
 
-This will load the best checkpoint and evaluate on the test set, printing per-class IoU scores.
+---
 
-### Configuration
+## 📁 Project Structure
 
-Adjust hyperparameters in `config.py`:
+```
+cityscapes-perception/
+├── config.py                   # Hyperparameters & paths
+├── train.py                    # Training script
+├── validate_tta.py            # TTA validation
+├── experiment_log.txt         # Detailed experiment tracking
+├── src/
+│   ├── dataset.py             # Cityscapes data loader
+│   ├── models.py              # DeepLabV3+ / UNet / MANet
+│   ├── losses.py              # Focal + Dice loss
+│   ├── metrics.py             # mIoU calculation
+│   ├── utils.py               # Checkpointing, visualization
+│   └── tta.py                 # Test-Time Augmentation
+├── checkpoints/               # Model weights
+└── plots/                     # Training curves
+```
+
+---
+
+## ⚙️ Configuration
+
+Key settings in [`config.py`](config.py):
 
 ```python
-# Model Selection
-MODEL_TYPE = "deeplabv3plus"  # Options: "unet", "deeplabv3plus", "manet"
-ENCODER = "efficientnet-b3"   # Any timm encoder
-DROPOUT = 0.2                  # Dropout for segmentation head
+# Model
+MODEL_TYPE = "deeplabv3plus"
+ENCODER = "efficientnet-b3"
+DROPOUT = 0.2
 
 # Training
-BATCH_SIZE = 8
+BATCH_SIZE = 4
+GRADIENT_ACCUMULATION_STEPS = 4  # Effective batch = 16
+NUM_EPOCHS = 150
 LEARNING_RATE = 5e-5
-NUM_EPOCHS = 100
-GRADIENT_ACCUMULATION_STEPS = 4  # Effective batch = BATCH_SIZE * GRADIENT_ACCUMULATION_STEPS
-
-# Data
-RESIZE = True  # Resize images to half resolution for faster training
-CACHE = False  # Cache dataset in RAM (requires ~20GB RAM)
 
 # Loss
-DICE_LOSS_WEIGHT = 1.1  # Balance between Focal and Dice loss
+DICE_LOSS_WEIGHT = 1.1
+FOCAL_LOSS_WEIGHT = 2.0
+
+# Data
+RESIZE = False  # Use full 640×640 resolution
+CACHE = False   # Set True if you have 32GB+ RAM
 ```
 
-## Project Structure
+---
 
+## 🛠️ Hardware Requirements
+
+**Minimum:**
+- GPU: NVIDIA GTX 1060 6GB
+- RAM: 16GB
+- Storage: 50GB (for Cityscapes)
+
+**Tested on:**
+- GPU: RTX 2060 6GB
+- CPU: Intel i5-8400
+- RAM: 32GB
+- OS: Windows 11
+
+---
+
+## 📈 Technical Details
+
+### Architecture
+- **Backbone**: EfficientNet-B3 (ImageNet pretrained)
+- **Decoder**: DeepLabV3+ with ASPP (Atrous Spatial Pyramid Pooling)
+- **Input**: 640×640 crops from 2048×1024 Cityscapes images
+- **Output**: 19-class pixel-wise predictions
+
+### Loss Function
 ```
-Semantic_Segmentation_Cityscapes/
-├── config.py              # Configuration file
-├── train.py               # Training script
-├── test.py                # Evaluation script
-├── requirements.txt       # Dependencies
-├── src/
-│   ├── dataset.py         # Cityscapes dataset loader
-│   ├── models.py          # Model factory (U-Net, DeepLabV3+, MANet)
-│   ├── losses.py          # Custom loss functions (Focal + Dice)
-│   ├── metrics.py         # Metrics computation (mIoU)
-│   └── utils.py           # Utilities (checkpoints, visualization)
-├── checkpoints/           # Model checkpoints
-├── plots/                 # Training curves (loss, mIoU)
-└── visuals/               # Prediction visualizations
+L_total = Focal(γ=2.0, weight=2.0) + Dice(weight=1.1)
 ```
-
-## Results
-
-| Model | Encoder | Input Size | mIoU | Notes |
-|-------|---------|------------|------|-------|
-| DeepLabV3+ | EfficientNet-B3 | 512×512 | TBD% | With progressive unfreezing |
-
-> Update this table with your results after training
-
-## Training Tips
-
-1. **Overfitting?** Uncomment `A.GaussNoise(p=0.1)` in `src/dataset.py`
-2. **Out of memory?** Reduce `BATCH_SIZE` or enable `RESIZE = True`
-3. **Faster training?** Enable `CACHE = True` if you have 20GB+ RAM
-4. **Different encoder?** Try `"resnet50"`, `"efficientnet-b0"`, or any [timm encoder](https://github.com/rwightman/pytorch-image-models)
-
-## Technical Details
-
-### Progressive Encoder Unfreezing
-The encoder starts frozen and unfreezes after 5% of epochs (default: epoch 5 for 100 epochs). This allows the decoder head to learn first before fine-tuning the pretrained encoder.
-
-### Joint Loss Function
-Combines Focal Loss (handles class imbalance) with Dice Loss (optimizes IoU directly):
-```
-Loss = FocalLoss + α × DiceLoss
-```
+- **Focal Loss**: Handles class imbalance by focusing on hard examples
+- **Dice Loss**: Optimizes IoU directly
 
 ### Data Augmentation
-- **Training**: Random crop (512×512), horizontal flip, brightness/contrast jitter
-- **Validation**: Center crop (512×512) for consistent evaluation
+```python
+# Training (moderate)
+- RandomCrop 640×640
+- HorizontalFlip (p=0.5)
+- ShiftScaleRotate (±10°, 0.9-1.1x scale, p=0.3)
+- ColorJitter (brightness, contrast, saturation, hue)
+- Light blur (motion/gaussian, p=0.1)
 
-## License
+# Validation
+- CenterCrop 640×640
+- Normalize (ImageNet stats)
+```
 
-MIT License - feel free to use this code for your projects.
+### Training Strategy
+1. **Progressive unfreezing**: Encoder frozen for first 7 epochs
+2. **Cosine annealing**: LR restarts every 30 epochs
+3. **Mixed precision**: AMP for memory efficiency
+4. **Early stopping**: Patience of 50 epochs
 
-## Acknowledgments
+---
 
-- [segmentation_models_pytorch](https://github.com/qubvel/segmentation_models.pytorch) for model implementations
-- [Cityscapes Dataset](https://www.cityscapes-dataset.com/) for the autonomous driving benchmark
+## 🗺️ Roadmap
+
+### Phase 1: Segmentation ✅
+- [x] Baseline DeepLabV3+ (53% mIoU)
+- [x] Data augmentation optimization
+- [x] Resolution increase to 640×640 (66.6% mIoU)
+- [x] Test-Time Augmentation (+1% boost)
+- [ ] Cosine annealing LR (in progress)
+
+### Phase 2: Object Detection 📋
+- [ ] Integrate YOLOv11 detection head
+- [ ] Multi-task learning (shared backbone)
+- [ ] Joint training (seg + det)
+- [ ] Real-time optimization (30+ FPS target)
+
+### Phase 3: Full Perception System 🔮
+- [ ] Depth estimation
+- [ ] Lane detection
+- [ ] Multi-camera fusion
+- [ ] Temporal modeling (video)
+
+**Goal**: Build a Tesla-like autonomous driving perception system 🚗💨
+
+---
+
+## 📚 References
+
+- **DeepLabV3+**: [Encoder-Decoder with Atrous Separable Convolution](https://arxiv.org/abs/1802.02611)
+- **EfficientNet**: [Rethinking Model Scaling for CNNs](https://arxiv.org/abs/1905.11946)
+- **Cityscapes**: [The Cityscapes Dataset](https://www.cityscapes-dataset.com/)
+- **Focal Loss**: [Focal Loss for Dense Object Detection](https://arxiv.org/abs/1708.02002)
+
+---
+
+## 📄 License
+
+MIT License - see [LICENSE](LICENSE) for details
+
+---
+
+## 🙏 Acknowledgments
+
+- **Cityscapes team** for the dataset
+- **segmentation_models_pytorch** for model implementations
+- **Claude Code** for development assistance
+
+---
+
+<p align="center">
+  <i>Part of an autonomous driving perception system project</i><br>
+  <i>Next: Multi-task learning with object detection</i>
+</p>

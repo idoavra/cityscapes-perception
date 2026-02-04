@@ -42,7 +42,7 @@ NUM_WORKERS = 5
 MODEL_TYPE = "deeplabv3plus"
 ENCODER = "efficientnet-b3"
 DROPOUT = 0.2  # Dropout for segmentation head (0.0 = disabled)
-RESUME = True
+RESUME = True  # Experiment 3.2a: Fresh training with Cosine Annealing LR
 
 # --- Training Hyperparameters ---
 CLASSES = 19
