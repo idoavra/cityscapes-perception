@@ -1,267 +1,221 @@
-# 🚗 Cityscapes Semantic Segmentation
+# Multi-Task Perception: Semantic Segmentation + Object Detection on Cityscapes
 
-**High-performance semantic segmentation for autonomous driving** | Part of a multi-task perception system
+A multi-task deep learning model that jointly performs **semantic segmentation** (19 classes) and **object detection** (8 classes) on the Cityscapes urban driving dataset. Built on a shared EfficientNet-B3 backbone with a DeepLabV3+ segmentation branch and a YOLO11s detection branch. Designed with ROS2/Gazebo integration in mind.
 
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-red.svg)](https://pytorch.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ---
 
-## 📊 Current Performance
+## Architecture
 
-| Metric | Value | Notes |
-|--------|-------|-------|
-| **Val mIoU** | **66.62%** | Experiment 2.2 (640×640 resolution) |
-| **Val mIoU (TTA)** | **66.99%** | +0.99% with Test-Time Augmentation |
-| **Train mIoU** | 75.03% | Slight overfitting (gap: 8.4%) |
-| **Training Time** | ~6-8 hours | 150 epochs on RTX 2060 |
-
-**From baseline 53% → 66.6% val mIoU** (+13.6% improvement!)
-
----
-
-## 🎯 Features
-
-- ✅ **DeepLabV3+ with EfficientNet-B3** encoder (ImageNet pretrained)
-- ✅ **640×640 resolution** for better ASPP context and small object detection
-- ✅ **Joint Loss**: Focal Loss + Dice Loss for class imbalance handling
-- ✅ **Moderate augmentation** (spatial + photometric transforms)
-- ✅ **Test-Time Augmentation** (6x ensemble: 3 scales + h-flip)
-- ✅ **Mixed precision training** (AMP) for memory efficiency
-- ✅ **Cosine Annealing LR** with warm restarts
-- ✅ **Progressive encoder unfreezing** for transfer learning
-- ✅ **Comprehensive experiment tracking** in `experiment_log.txt`
-
----
-
-## 🧪 Experiment Journey
-
-| Exp | Change | Train mIoU | Val mIoU | Gap | Result |
-|-----|--------|-----------|----------|-----|--------|
-| **Baseline** | - | 61.0% | 53.0% | 8.0% | - |
-| 1.1 | Dropout 0.3 | 66.1% | 53.5% | 12.7% | ❌ Worse gap |
-| 2.1 | Aggressive aug | 48.4% | 47.3% | 1.1% | ❌ Underfitting |
-| **2.1b** | Moderate aug | 70.0% | 58.8% | 11.2% | ✅ +5.8% val |
-| **2.2** | Resolution 640×640 | **75.0%** | **66.6%** | 8.4% | ✅ **+13.6% val!** |
-| **3.1** | TTA (inference) | 75.0% | **67.0%** | 8.0% | ✅ +1% boost |
-| 3.2a | Cosine Annealing | _In progress_ | _TBD_ | _TBD_ | ⏳ Training |
-
-**Key Insights:**
-- Resolution increase (512→640) was the biggest win (+7.8% val mIoU)
-- Moderate augmentation found the sweet spot (aggressive caused underfitting)
-- TTA provides +1% without retraining (especially on small objects: motorcycle +3.67%)
-
-See detailed analysis in [`experiment_log.txt`](experiment_log.txt)
-
----
-
-## 🚀 Quick Start
-
-### Installation
-
-```bash
-# Clone repository
-git clone <your-repo-url>
-cd Semantic_Segmentation_Cityscapes
-
-# Create virtual environment
-python -m venv venv
-venv\Scripts\activate  # Windows
-# source venv/bin/activate  # Linux/Mac
-
-# Install dependencies
-pip install -r requirements.txt
+```
+Input Image (640×640)
+        │
+  EfficientNet-B3 (ImageNet pretrained, frozen during training)
+        │
+   ┌────┴────┐
+   P3  P4   P5      ← multi-scale feature maps (80×80, 40×40, 20×20)
+   └────┬────┘
+   LightFPN / BiFPN
+   ┌────┴──────────┐
+   │               │
+DeepLabV3+     YOLO11s Detect
+  decoder          head
+   │               │
+19 seg classes   8 det classes
+(frozen)        (trained from scratch)
 ```
 
-### Dataset Setup
+| Component    | Details                                        |
+|--------------|------------------------------------------------|
+| Backbone     | EfficientNet-B3, ImageNet pretrained, frozen   |
+| Seg branch   | DeepLabV3+ decoder, pretrained to 66.6% mIoU  |
+| Det branch   | LightFPN or BiFPN → YOLO11s Detect head       |
+| Input size   | 640×640                                        |
+| Hardware     | RTX 2060 6GB, i5-8400, Batch 4, grad accum 4  |
+| Dataset      | Cityscapes — 2975 train / 500 val              |
 
-Download [Cityscapes dataset](https://www.cityscapes-dataset.com/) and update `config.py`:
+**Segmentation classes (19):** road, sidewalk, building, wall, fence, pole, traffic light, traffic sign, vegetation, terrain, sky, person, rider, car, truck, bus, train, motorcycle, bicycle
+
+**Detection classes (8):** person, rider, car, truck, bus, train, motorcycle, bicycle
+
+---
+
+## Best Results (Run 4 — Light FPN, no Phase 2)
+
+| Split | mAP@0.5 | mIoU  |
+|-------|---------|-------|
+| Val   | 0.634   | 0.656 |
+| Test  | 0.577   | 0.632 |
+
+Per-class AP:
+
+| Class      | AP    | vs Baseline |
+|------------|-------|-------------|
+| person     | 0.688 | +0.3pp      |
+| rider      | 0.687 | -8.7pp      |
+| car        | 0.773 | +1.9pp      |
+| truck      | 0.546 | +12.0pp     |
+| bus        | 0.785 | +21.5pp     |
+| train      | 0.424 | +27.5pp     |
+| motorcycle | 0.428 | -7.3pp      |
+| bicycle    | 0.649 | -0.2pp      |
+
+---
+
+## Setup
+
+### Requirements
+
+```bash
+pip install torch torchvision
+pip install segmentation-models-pytorch
+pip install ultralytics
+pip install albumentations
+pip install efficientnet-pytorch
+```
+
+### Dataset
+
+Download [Cityscapes](https://www.cityscapes-dataset.com/) and update `config.py`:
 
 ```python
-DATA_DIR = Path(r"C:\datasets\Cityspaces\images")
-MASK_DIR = Path(r"C:\datasets\Cityspaces\gtFine")
-```
-
-Expected structure:
-```
-Cityspaces/
-├── images/
-│   ├── train/
-│   └── val/
-└── gtFine/
-    ├── train/
-    └── val/
-```
-
-### Training
-
-```bash
-# Train from scratch
-python train.py
-
-# Resume training (set RESUME=True in config.py)
-python train.py
-```
-
-### Validation with TTA
-
-```bash
-# Test-Time Augmentation validation
-python validate_tta.py
+DATA_DIR = Path("path/to/cityscapes/images")
+MASK_DIR = Path("path/to/cityscapes/gtFine")
 ```
 
 ---
 
-## 📁 Project Structure
+## Training
+
+### Step 1 — Segmentation baseline (checkpoint provided in `networks/`)
+
+```bash
+python train.py
+```
+
+Trains DeepLabV3+ segmentation only. Produces `checkpoints/best_model.pth` (~66.6% mIoU).
+
+### Step 2 — Multi-task training
+
+```bash
+python MultiHead_train.py
+```
+
+Trains FPN + YOLO detection head for 110 epochs with backbone and seg decoder frozen.
+
+Key settings in `config.py`:
+
+```python
+PHASE1_EPOCHS = 110   # Full training duration — Phase 2 eliminated
+PHASE2_EPOCHS = 0
+BiFPN         = False # True to use BiFPN (warning: overfits at this data scale)
+```
+
+---
+
+## Inference
+
+```bash
+# Single image with visualization
+python inference.py --image path/to/image.jpg --show
+
+# Directory of images (saves output alongside originals)
+python inference.py --dir path/to/images/
+
+# Quantitative evaluation on test set
+python inference.py --test
+
+# Specific checkpoint
+python inference.py --test --checkpoint networks/run_4/multitask_best.pth
+```
+
+### ROS2 Integration
+
+```python
+from inference import MultiTaskPredictor
+
+predictor = MultiTaskPredictor("networks/run_4/multitask_best.pth")
+seg_mask, boxes_xyxy, labels, scores = predictor.predict(image_bgr)
+
+# seg_mask   : (H, W) np.uint8   — Cityscapes train IDs 0-18
+# boxes_xyxy : (N, 4) np.float32 — pixel coords in original image space
+# labels     : (N,)   np.int32   — class IDs 0-7
+# scores     : (N,)   np.float32 — confidence [0, 1]
+```
+
+---
+
+## Ablation Study
+
+Five training runs were conducted to isolate the effect of each design choice.
+
+| Run | FPN   | Scheduler         | Mosaic | Phase 2     | Val mAP | Val mIoU |
+|-----|-------|-------------------|--------|-------------|---------|----------|
+| 1   | Light | WarmRestarts      | No     | Yes (60 ep) | 0.600   | 0.663    |
+| 2   | Light | CosineAnnealingLR | Yes    | Yes (early) | 0.553   | 0.662    |
+| 3   | BiFPN | WarmRestarts      | Yes    | Yes (early) | 0.382   | 0.675    |
+| 4   | Light | CosineAnnealingLR | Yes    | No          | 0.634   | 0.656    |
+| 5   | BiFPN | CosineAnnealingLR | Yes    | No          | 0.672   | 0.653    |
+
+Run 5 has a higher val mAP but overfits: its test mAP is 0.309 vs Run 4's 0.577.
+
+### Key Findings
+
+#### 1. Phase 2 is architecturally harmful
+
+The original two-phase design had Phase 2 unfreezing the seg decoder for joint fine-tuning. In every run with Phase 2 active, detection regressed from its Phase 1 peak (Run 1: 0.64→0.60, Run 2: stopped early, Run 3: 0.38 final). Two structural causes:
+
+- **Optimizer state reset**: a new optimizer is created at the phase transition, discarding all Phase 1 momentum state built up over 50 epochs.
+- **Competing gradients**: unfreezing the decoder introduces gradients that pull shared backbone features away from the detection-optimized configuration, with no new information available (backbone stays frozen in both phases).
+
+Eliminating Phase 2 (Run 4) immediately improved mAP from 0.60 → 0.634 and allowed uninterrupted training for the full 110 epochs.
+
+#### 2. CosineAnnealingWarmRestarts prevents convergence
+
+The sawtooth LR pattern (T0=10/20) periodically resets learning rate to its maximum, ejecting the model from the minimum it was approaching. Replacing with `CosineAnnealingLR` (single smooth decay over the full phase) improved per-class quality. `bus` AP improved by +21pp (Run 1→Run 4) and `truck` by +12pp.
+
+#### 3. Mosaic augmentation dramatically improves rare classes
+
+Standard 640×640 random crops from 2048×1024 Cityscapes images frequently contain zero rare-class instances. Mosaic stitches 4 random crops per sample, increasing effective exposure ~4×. `train` AP improved from 0.149 → 0.424 (+27.5pp), `bus` from 0.570 → 0.785 (+21.5pp). Trade-off: `rider` and `motorcycle` regressed slightly, as they rely on scene context (e.g., rider-on-bicycle) that gets lost in 320×320 mosaic tiles.
+
+#### 4. BiFPN overfits at this dataset scale
+
+BiFPN achieves the highest val mAP (0.672) but has a massive val→test gap (0.672→0.309), compared to Light FPN's gap of 0.634→0.577. BiFPN's extra bottom-up pathway increases parameter count without adding training data, causing the model to memorize the 400-image val distribution. Light FPN's constrained capacity acts as implicit regularization. BiFPN could be viable with dropout on the FPN layers or a larger dataset.
+
+#### 5. COCO pretrained YOLO initialization
+
+6 of the 8 Cityscapes detection classes exist in COCO. The YOLO11s head starts at mAP=0.49 before any Cityscapes training. All improvements above this baseline represent genuine adaptation to the Cityscapes distribution and box statistics.
+
+---
+
+## Project Structure
 
 ```
-cityscapes-perception/
-├── config.py                   # Hyperparameters & paths
-├── train.py                    # Training script
-├── validate_tta.py            # TTA validation
-├── experiment_log.txt         # Detailed experiment tracking
+├── MultiHead_train.py      # Multi-task training script
+├── train.py                # Segmentation-only baseline (do not modify)
+├── inference.py            # Inference + ROS2-ready predictor class
+├── config.py               # All hyperparameters
+├── compute_map.py          # mAP@0.5 computation (fixed for Cityscapes classes)
 ├── src/
-│   ├── dataset.py             # Cityscapes data loader
-│   ├── models.py              # DeepLabV3+ / UNet / MANet
-│   ├── losses.py              # Focal + Dice loss
-│   ├── metrics.py             # mIoU calculation
-│   ├── utils.py               # Checkpointing, visualization
-│   └── tta.py                 # Test-Time Augmentation
-├── checkpoints/               # Model weights
-└── plots/                     # Training curves
+│   ├── multitask_model.py  # Model definition (EfficientNet + FPN/BiFPN + YOLO)
+│   ├── dataset.py          # Cityscapes dataloader with mosaic augmentation
+│   ├── losses.py           # Det_Seg_Loss with batch_size normalization fix
+│   └── metrics.py          # StreamSegMetrics (confusion matrix mIoU)
+├── networks/               # Saved checkpoints per run
+│   ├── run_4/multitask_best.pth    # Best generalizing model
+│   └── run_5/multitask_best.pth    # Higher val mAP, overfits
+└── EXPERIMENT_LOG.md       # Full ablation log with per-run analysis
 ```
 
 ---
 
-## ⚙️ Configuration
-
-Key settings in [`config.py`](config.py):
-
-```python
-# Model
-MODEL_TYPE = "deeplabv3plus"
-ENCODER = "efficientnet-b3"
-DROPOUT = 0.2
-
-# Training
-BATCH_SIZE = 4
-GRADIENT_ACCUMULATION_STEPS = 4  # Effective batch = 16
-NUM_EPOCHS = 150
-LEARNING_RATE = 5e-5
-
-# Loss
-DICE_LOSS_WEIGHT = 1.1
-FOCAL_LOSS_WEIGHT = 2.0
-
-# Data
-RESIZE = False  # Use full 640×640 resolution
-CACHE = False   # Set True if you have 32GB+ RAM
-```
-
----
-
-## 🛠️ Hardware Requirements
-
-**Minimum:**
-- GPU: NVIDIA GTX 1060 6GB
-- RAM: 16GB
-- Storage: 50GB (for Cityscapes)
-
-**Tested on:**
-- GPU: RTX 2060 6GB
-- CPU: Intel i5-8400
-- RAM: 32GB
-- OS: Windows 11
-
----
-
-## 📈 Technical Details
-
-### Architecture
-- **Backbone**: EfficientNet-B3 (ImageNet pretrained)
-- **Decoder**: DeepLabV3+ with ASPP (Atrous Spatial Pyramid Pooling)
-- **Input**: 640×640 crops from 2048×1024 Cityscapes images
-- **Output**: 19-class pixel-wise predictions
-
-### Loss Function
-```
-L_total = Focal(γ=2.0, weight=2.0) + Dice(weight=1.1)
-```
-- **Focal Loss**: Handles class imbalance by focusing on hard examples
-- **Dice Loss**: Optimizes IoU directly
-
-### Data Augmentation
-```python
-# Training (moderate)
-- RandomCrop 640×640
-- HorizontalFlip (p=0.5)
-- ShiftScaleRotate (±10°, 0.9-1.1x scale, p=0.3)
-- ColorJitter (brightness, contrast, saturation, hue)
-- Light blur (motion/gaussian, p=0.1)
-
-# Validation
-- CenterCrop 640×640
-- Normalize (ImageNet stats)
-```
-
-### Training Strategy
-1. **Progressive unfreezing**: Encoder frozen for first 7 epochs
-2. **Cosine annealing**: LR restarts every 30 epochs
-3. **Mixed precision**: AMP for memory efficiency
-4. **Early stopping**: Patience of 50 epochs
-
----
-
-## 🗺️ Roadmap
-
-### Phase 1: Segmentation ✅
-- [x] Baseline DeepLabV3+ (53% mIoU)
-- [x] Data augmentation optimization
-- [x] Resolution increase to 640×640 (66.6% mIoU)
-- [x] Test-Time Augmentation (+1% boost)
-- [ ] Cosine annealing LR (in progress)
-
-### Phase 2: Object Detection 📋
-- [ ] Integrate YOLOv11 detection head
-- [ ] Multi-task learning (shared backbone)
-- [ ] Joint training (seg + det)
-- [ ] Real-time optimization (30+ FPS target)
-
-### Phase 3: Full Perception System 🔮
-- [ ] Depth estimation
-- [ ] Lane detection
-- [ ] Multi-camera fusion
-- [ ] Temporal modeling (video)
-
-**Goal**: Build a Tesla-like autonomous driving perception system 🚗💨
-
----
-
-## 📚 References
+## References
 
 - **DeepLabV3+**: [Encoder-Decoder with Atrous Separable Convolution](https://arxiv.org/abs/1802.02611)
 - **EfficientNet**: [Rethinking Model Scaling for CNNs](https://arxiv.org/abs/1905.11946)
-- **Cityscapes**: [The Cityscapes Dataset](https://www.cityscapes-dataset.com/)
+- **BiFPN**: [EfficientDet: Scalable and Efficient Object Detection](https://arxiv.org/abs/1911.09070)
+- **YOLO11**: [Ultralytics YOLO11](https://github.com/ultralytics/ultralytics)
+- **Cityscapes**: [The Cityscapes Dataset for Semantic Urban Scene Understanding](https://www.cityscapes-dataset.com/)
 - **Focal Loss**: [Focal Loss for Dense Object Detection](https://arxiv.org/abs/1708.02002)
-
----
-
-## 📄 License
-
-MIT License - see [LICENSE](LICENSE) for details
-
----
-
-## 🙏 Acknowledgments
-
-- **Cityscapes team** for the dataset
-- **segmentation_models_pytorch** for model implementations
-- **Claude Code** for development assistance
-
----
-
-<p align="center">
-  <i>Part of an autonomous driving perception system project</i><br>
-  <i>Next: Multi-task learning with object detection</i>
-</p>

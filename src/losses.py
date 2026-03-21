@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from ultralytics.utils.loss import v8DetectionLoss
 
 class JointLoss(nn.Module):
     def __init__(self, num_classes=19, alpha=0.5, gamma=2.0, weight=None):
@@ -57,3 +58,97 @@ class JointLoss(nn.Module):
         
         # Total loss = CE + (alpha * Dice)
         return focal + (self.alpha * dice_loss)
+    
+
+class Det_Seg_Loss(nn.Module):
+    """
+    Multi-task loss: L_total = λ_seg × (Focal+Dice) + λ_det × (Box+Cls+DFL)
+    """
+    def __init__(self, seg_num_classes=19, det_num_classes=8,
+                 alpha=0.5, gamma=2.0, weight=None,
+                 lambda_seg=1.0, lambda_det=1.0):
+        super().__init__()
+
+        self.seg_num_classes = seg_num_classes
+        self.det_num_classes = det_num_classes
+        self.seg_loss = JointLoss(num_classes=seg_num_classes, alpha=alpha, gamma=gamma, weight=weight)
+
+        # Lazy init: v8DetectionLoss needs model.dethead to extract stride/anchor params
+        self.det_loss_fn = None
+        self.lambda_seg = lambda_seg
+        self.lambda_det = lambda_det
+
+    def _init_det_loss(self, model):
+        """Initialize YOLO loss with full YOLO model (needs model.args)"""
+        if self.det_loss_fn is None:
+            self.det_loss_fn = v8DetectionLoss(model.yolo_model)
+
+    def forward(self, seg_preds, det_preds, seg_targets, det_targets, det_labels, model=None):
+        """
+        Args:
+            seg_preds: (B, 19, H, W)
+            det_preds: List[Tensor] from P3, P4, P5
+            seg_targets: (B, H, W)
+            det_targets: List[(N_i, 4)] YOLO format [x, y, w, h]
+            det_labels: List[(N_i,)]
+            model: MultiTaskModel
+        """
+        loss_seg = self.seg_loss(seg_preds, seg_targets)
+
+        # Initialize YOLO loss on first call
+        if model is not None and self.det_loss_fn is None:
+            self._init_det_loss(model)
+
+        if self.det_loss_fn is not None:
+            # Convert list format to YOLO batch format
+            batch_bboxes, batch_cls, batch_idx = [], [], []
+
+            for i, (boxes, labels) in enumerate(zip(det_targets, det_labels)):
+                if len(boxes) > 0:
+                    batch_bboxes.append(boxes)
+                    batch_cls.append(labels)
+                    batch_idx.append(torch.full((len(boxes),), i, dtype=torch.long, device=boxes.device))
+
+            if len(batch_bboxes) > 0:
+                batch_dict = {
+                    'cls': torch.cat(batch_cls).unsqueeze(1),
+                    'bboxes': torch.cat(batch_bboxes),
+                    'batch_idx': torch.cat(batch_idx).unsqueeze(1),
+                }
+
+                loss_det, loss_items = self.det_loss_fn(det_preds, batch_dict)
+
+                # YOLO returns [box, cls, dfl] losses - sum for total
+                if isinstance(loss_det, torch.Tensor) and loss_det.numel() > 1:
+                    loss_det = loss_det.sum()
+
+                # v8DetectionLoss multiplies by batch_size internally for optimizer
+                # consistency. Undo it so lambda_det operates on per-sample scale,
+                # matching the seg loss scale.
+                batch_size = seg_preds.shape[0]
+                loss_det = loss_det / batch_size
+
+                det_box_loss = loss_items[0].item() if len(loss_items) > 0 else 0.0
+                det_cls_loss = loss_items[1].item() if len(loss_items) > 1 else 0.0
+                det_dfl_loss = loss_items[2].item() if len(loss_items) > 2 else 0.0
+            else:
+                # No boxes in batch - create zero loss with gradient support
+                loss_det = torch.tensor(0.0, device=seg_preds.device, requires_grad=True)
+                det_box_loss = det_cls_loss = det_dfl_loss = 0.0
+        else:
+            # Detection loss not initialized yet
+            loss_det = torch.tensor(0.0, device=seg_preds.device, requires_grad=True)
+            det_box_loss = det_cls_loss = det_dfl_loss = 0.0
+
+        total_loss = self.lambda_seg * loss_seg + self.lambda_det * loss_det
+
+        loss_dict = {
+            'seg_loss': loss_seg.item(),
+            'det_box_loss': det_box_loss,
+            'det_cls_loss': det_cls_loss,
+            'det_dfl_loss': det_dfl_loss,
+            'det_loss': loss_det.item(),
+            'total': total_loss.item()
+        }
+
+        return total_loss, loss_dict

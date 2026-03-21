@@ -26,5 +26,5 @@ pyyaml>=6.0
 # wandb>=0.15.0
 # tensorboard>=2.13.0
 
-# Future: Object Detection (will be added in Phase 2)
-# ultralytics>=8.0.0  # YOLOv11 for multi-task detection
+# Object Detection (Phase 2)
+ultralytics>=8.0.0  # YOLOv11 for multi-task detection
