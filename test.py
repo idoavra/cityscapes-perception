@@ -25,7 +25,7 @@ def test():
     ).to(config.DEVICE)
     
     # 3. Load your best weights
-    checkpoint_path = "checkpoints/best_model.pth"
+    checkpoint_path = "checkpoints/baseline.pth"
     try:
         load_checkpoint(checkpoint_path, model)
     except FileNotFoundError:
