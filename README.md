@@ -9,23 +9,14 @@ A multi-task deep learning model that jointly performs **semantic segmentation**
 
 ## Architecture
 
-```
-Input Image (640×640)
-        │
-  EfficientNet-B3 (ImageNet pretrained, frozen during training)
-        │
-   ┌────┴────┐
-   P3  P4   P5      ← multi-scale feature maps (80×80, 40×40, 20×20)
-   └────┬────┘
-   LightFPN / BiFPN
-   ┌────┴──────────┐
-   │               │
-DeepLabV3+     YOLO11s Detect
-  decoder          head
-   │               │
-19 seg classes   8 det classes
-(frozen)        (trained from scratch)
-```
+| Metric | Value | Notes |
+|--------|-------|-------|
+| **Val mIoU** | **66.62%** | Experiment 2.2 (640×640 resolution) |
+| **Val mIoU (TTA)** | **67.61%** | +0.99% with Test-Time Augmentation |
+| **Train mIoU** | 75.03% | Slight overfitting (gap: 8.4%) |
+| **Training Time** | ~6-8 hours | 150 epochs on RTX 2060 |
+
+**From baseline 53% → 66.6% val mIoU** (+13.6% improvement!)
 
 | Component    | Details                                        |
 |--------------|------------------------------------------------|
